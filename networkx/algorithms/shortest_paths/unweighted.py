@@ -56,11 +56,11 @@ def single_source_shortest_path_length(G,source,cutoff=None):
     nextlevel={source:1}  # dict of nodes to check at next level
     while nextlevel:
         thislevel=nextlevel  # advance to next level
-        nextlevel={}         # and start a new list (fringe)
+        nextlevel=set([])         # and start a new list (fringe)
         for v in thislevel:
             if v not in seen:
                 seen[v]=level # set the level of vertex v
-                nextlevel.update(G[v]) # add neighbors of v
+                nextlevel.update(set(G[v])) # add neighbors of v
         if (cutoff is not None and cutoff <= level):  break
         level=level+1
     return seen  # return all path lengths as dictionary

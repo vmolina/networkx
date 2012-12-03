@@ -371,7 +371,7 @@ class Graph(object):
                 raise NetworkXError(\
                     "The attr_dict argument must be a dictionary.")
         if n not in self.node:
-            self.adj[n] = {}
+            self.adj[n] = []
             self.node[n] = attr_dict
         else: # update attr even if node already exists
             self.node[n].update(attr_dict)
@@ -428,7 +428,7 @@ class Graph(object):
             except TypeError:
                 nn,ndict = n
                 if nn not in self.node:
-                    self.adj[nn] = {}
+                    self.adj[nn] = []
                     newdict = attr.copy()
                     newdict.update(ndict)
                     self.node[nn] = newdict
@@ -438,7 +438,7 @@ class Graph(object):
                     olddict.update(ndict)
                 continue
             if newnode:
-                self.adj[n] = {}
+                self.adj[n] = []
                 self.node[n] = attr.copy()
             else:
                 self.node[n].update(attr)
@@ -476,12 +476,12 @@ class Graph(object):
         """
         adj = self.adj
         try:
-            nbrs = list(adj[n].keys()) # keys handles self-loops (allow mutation later)
+            nbrs = adj[n] # keys handles self-loops (allow mutation later)
             del self.node[n]
         except KeyError: # NetworkXError if n not in self
             raise NetworkXError("The node %s is not in the graph."%(n,))
         for u in nbrs:
-            del adj[u][n]   # remove all edges n-u in graph
+            adj[u].remove(n)   # remove all edges n-u in graph
         del adj[n]          # now remove node
 
 
@@ -515,8 +515,8 @@ class Graph(object):
         for n in nodes:
             try:
                 del self.node[n]
-                for u in list(adj[n].keys()):   # keys() handles self-loops 
-                    del adj[u][n]         #(allows mutation of dict in loop)
+                for u in adj[n]:   # keys() handles self-loops 
+                    adj[u].remove(n)         
                 del adj[n]
             except KeyError:
                 pass
@@ -704,16 +704,16 @@ class Graph(object):
                     "The attr_dict argument must be a dictionary.")
         # add nodes
         if u not in self.node:
-            self.adj[u] = {}
+            self.adj[u] = []
             self.node[u] = {}
         if v not in self.node:
-            self.adj[v] = {}
+            self.adj[v] = []
             self.node[v] = {}
         # add the edge
-        datadict=self.adj[u].get(v,{})
-        datadict.update(attr_dict)
-        self.adj[u][v] = datadict
-        self.adj[v][u] = datadict
+        if v not in self.adj[u]:
+            self.adj[u].append(v)
+        if u not in self.adj[v]:
+            self.adj[v].append(u)
 
 
     def add_edges_from(self, ebunch, attr_dict=None, **attr):
@@ -777,16 +777,15 @@ class Graph(object):
                 raise NetworkXError(\
                     "Edge tuple %s must be a 2-tuple or 3-tuple."%(e,))
             if u not in self.node:
-                self.adj[u] = {}
+                self.adj[u] = []
                 self.node[u] = {}
             if v not in self.node:
-                self.adj[v] = {}
+                self.adj[v] = []
                 self.node[v] = {}
-            datadict=self.adj[u].get(v,{})
-            datadict.update(attr_dict)
-            datadict.update(dd)
-            self.adj[u][v] = datadict
-            self.adj[v][u] = datadict
+            if v not in self.adj[u]:
+                self.adj[u].append(v)
+            if u not in self.adj[v]:
+                self.adj[v].append(u)
 
 
     def add_weighted_edges_from(self, ebunch, weight='weight', **attr):
@@ -820,7 +819,8 @@ class Graph(object):
         >>> G = nx.Graph()   # or DiGraph, MultiGraph, MultiDiGraph, etc
         >>> G.add_weighted_edges_from([(0,1,3.0),(1,2,7.5)])
         """
-        self.add_edges_from(((u,v,{weight:d}) for u,v,d in ebunch),**attr)
+        warning.warn("default","Weighted edges are not supported, weight will be ignored")
+        self.add_edges_from(((u,v,{}) for u,v,d in ebunch),**attr)
 
     def remove_edge(self, u, v):
         """Remove the edge between u and v.
@@ -850,9 +850,9 @@ class Graph(object):
         >>> G.remove_edge(*e[:2]) # select first part of edge tuple
         """
         try:
-            del self.adj[u][v]
+            self.adj[u].remove(v)
             if u != v:  # self-loop needs only one entry removed
-                del self.adj[v][u]
+                self.adj[v].remove(u)
         except KeyError:
             raise NetworkXError("The edge %s-%s is not in the graph"%(u,v))
 
@@ -889,9 +889,9 @@ class Graph(object):
         for e in ebunch:
             u,v = e[:2]  # ignore edge data if present
             if u in adj and v in adj[u]:
-                del adj[u][v]
+                adj[u].remove(v)
                 if u != v:  # self loop needs only one entry removed
-                    del adj[v][u]
+                    adj[v].remove(u)
 
 
     def has_edge(self, u, v):
@@ -974,7 +974,7 @@ class Graph(object):
 
         """
         try:
-            return list(self.adj[n])
+            return self.adj[n]
         except KeyError:
             raise NetworkXError("The node %s is not in the graph."%(n,))
 
@@ -1093,18 +1093,11 @@ class Graph(object):
             nodes_nbrs = self.adj.items()
         else:
             nodes_nbrs=((n,self.adj[n]) for n in self.nbunch_iter(nbunch))
-        if data:
-            for n,nbrs in nodes_nbrs:
-                for nbr,data in nbrs.items():
-                    if nbr not in seen:
-                        yield (n,nbr,data)
-                seen[n]=1
-        else:
-            for n,nbrs in nodes_nbrs:
-                for nbr in nbrs:
-                    if nbr not in seen:
-                        yield (n,nbr)
-                seen[n] = 1
+        for n,nbrs in nodes_nbrs:
+            for nbr in nbrs:
+                if nbr not in seen:
+                    yield (n,nbr)
+            seen[n] = 1
         del seen
 
 
@@ -1152,10 +1145,7 @@ class Graph(object):
         >>> G.get_edge_data('a','b',default=0) # edge not in graph, return 0
         0
         """
-        try:
-            return self.adj[u][v]
-        except KeyError:
-            return default
+        return None
 
     def adjacency_list(self):
         """Return an adjacency list representation of the graph.
@@ -1180,7 +1170,7 @@ class Graph(object):
         [[1], [0, 2], [1, 3], [2]]
 
         """
-        return list(map(list,iter(self.adj.values())))
+        return list((self.adj.values()))
 
     def adjacency_iter(self):
         """Return an iterator of (node, adjacency dict) tuples for all nodes.
@@ -1287,14 +1277,10 @@ class Graph(object):
         else:
             nodes_nbrs=((n,self.adj[n]) for n in self.nbunch_iter(nbunch))
   
-        if weight is None:
-            for n,nbrs in nodes_nbrs:
-                yield (n,len(nbrs)+(n in nbrs)) # return tuple (n,degree)
-        else:
-        # edge weighted graph - degree is sum of nbr edge weights
-            for n,nbrs in nodes_nbrs:
-                yield (n, sum((nbrs[nbr].get(weight,1) for nbr in nbrs)) +
-                              (n in nbrs and nbrs[n].get(weight,1)))
+        
+        for n,nbrs in nodes_nbrs:
+            yield (n,len(nbrs)+(n in nbrs)) # return tuple (n,degree)
+        
 
 
     def clear(self):
@@ -1395,9 +1381,9 @@ class Graph(object):
         G=DiGraph()
         G.name=self.name
         G.add_nodes_from(self)
-        G.add_edges_from( ((u,v,deepcopy(data)) 
+        G.add_edges_from( ((u,v) 
                            for u,nbrs in self.adjacency_iter() 
-                           for v,data in nbrs.items()) )
+                           for v in nbrs) )
         G.graph=deepcopy(self.graph)
         G.node=deepcopy(self.node)
         return G
@@ -1489,13 +1475,13 @@ class Graph(object):
         self_adj=self.adj
         # add nodes and edges (undirected method)
         for n in H.node:
-            Hnbrs={}
+            Hnbrs=[]
             H_adj[n]=Hnbrs
-            for nbr,d in self_adj[n].items():
+            for nbr in self_adj[n]:
                 if nbr in H_adj:
                     # add both representations of edge: n-nbr and nbr-n
-                    Hnbrs[nbr]=d
-                    H_adj[nbr][n]=d
+                    Hnbrs.append(nbr)
+                    H_adj[nbr].append(n)
         H.graph=self.graph
         return H
 
@@ -1555,12 +1541,7 @@ class Graph(object):
         >>> G.selfloop_edges(data=True)
         [(1, 1, {})]
         """
-        if data:
-            return [ (n,n,nbrs[n])
-                     for n,nbrs in self.adj.items() if n in nbrs ]
-        else:
-            return [ (n,n)
-                     for n,nbrs in self.adj.items() if n in nbrs ]
+        return [ (n,n) for n,nbrs in self.adj.items() if n in nbrs ]
 
 
     def number_of_selfloops(self):
